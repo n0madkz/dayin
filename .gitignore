@@ -1,0 +1,9 @@
+.runtime/
+.env
+.env.*
+!.env.example
+.openai/
+*.zip
+*.tar.gz
+node_modules/
+.npm-cache/
