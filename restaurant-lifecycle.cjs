@@ -1,7 +1,7 @@
 const RETENTION_MS=7*24*60*60*1000;
 const {transaction}=require('./sqlite-transaction.cjs');
 function purgeDueRestaurants(db,now=Date.now()){
- const due=db.prepare('SELECT id,payload FROM restaurants').all().filter(row=>{const r=JSON.parse(row.payload);return Number.isFinite(r.deleteAt)&&r.deleteAt<=now});
+ const due=db.prepare("SELECT id,payload FROM restaurants WHERE json_extract(payload,'$.deleteAt') IS NOT NULL AND json_extract(payload,'$.deleteAt')<=?").all(now);
  if(!due.length)return 0;
  transaction(db,()=>{for(const {id} of due){
   db.prepare('DELETE FROM sessions WHERE user IN (SELECT id FROM users WHERE restaurant=?)').run(id);

@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import serverModule from '../server.cjs';
 import lifecycleModule from '../restaurant-lifecycle.cjs';
+export {RestaurantOrders} from './restaurant.mjs';
 
 class SqlAdapter{
  constructor(storage){this.storage=storage}
@@ -22,13 +23,35 @@ async function dispatch(app,request){return new Promise((resolve,reject)=>{
  })}
 export class DayinPlatform extends DurableObject{
  constructor(ctx,env){super(ctx,env);this.db=new SqlAdapter(ctx.storage);this.apps=new Map()}
- async fetch(request){const origin=new URL(request.url).origin;
+ async ensure(origin){
   if(!this.apps.has(origin))this.apps.set(origin,this.ctx.blockConcurrencyWhile(()=>serverModule.createApp({db:this.db,origin,localMail:false,env:this.env,bootstrap:{admin:this.env.ADMIN_BOOTSTRAP_PASSWORD,owner:this.env.OWNER_BOOTSTRAP_PASSWORD},passwordHash:p=>passwordHash(p,this.env.PASSWORD_PEPPER),passwordMatches:(p,h)=>passwordMatches(p,h,this.env.PASSWORD_PEPPER),disableTimer:true,createServer:bridgeServer,readAsset:async asset=>{const response=await this.env.ASSETS.fetch(new Request(origin+'/'+asset));if(!response.ok)throw Error('Asset not found');return new Uint8Array(await response.arrayBuffer())}})));
-  const app=await this.apps.get(origin);const response=await dispatch(app,request);
-  const next=this.db.prepare('SELECT payload FROM restaurants').all().map(row=>JSON.parse(row.payload).deleteAt).filter(Number.isFinite).sort((a,b)=>a-b)[0];
+  return this.apps.get(origin);
+ }
+ async venue(id,origin){await this.ensure(origin);lifecycleModule.purgeDueRestaurants(this.db);const row=this.db.prepare('SELECT payload FROM restaurants WHERE id=?').get(id);if(!row)return {error:'Заведение не найдено',status:404};return {restaurant:JSON.parse(row.payload),menu:JSON.parse(this.db.prepare('SELECT payload FROM menus WHERE restaurant=?').get(id)?.payload||'[]')}}
+ async authorize(cookie,origin){await this.ensure(origin);const token=cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('dayin_session='))?.slice(14);if(!token||!/^[a-f0-9]{64}$/.test(token))return {error:'Войдите в личный кабинет',status:401};const hash=hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))));const user=this.db.prepare("SELECT users.id,users.restaurant,users.role,users.must_change FROM sessions JOIN users ON users.id=sessions.user WHERE sessions.token=? AND sessions.expires>? AND users.active=1 AND users.role<>'customer'").get(hash,Date.now());if(!user)return {error:'Войдите в личный кабинет',status:401};if(user.must_change)return {error:'Сначала задайте новый пароль',status:403};return {id:user.id,role:user.role,restaurant:user.restaurant,mustChangePassword:false}}
+ async indexRecord(record,guest,kind,revision,origin){await this.ensure(origin);if(!this.db.prepare('SELECT id FROM restaurants WHERE id=?').get(record.restaurant))return;const existing=this.db.prepare('SELECT payload FROM records WHERE id=?').get(record.id);if(existing&&(JSON.parse(existing.payload).revision||0)>revision)return;this.db.prepare('INSERT OR REPLACE INTO records(id,kind,restaurant,guest,payload,customer) VALUES(?,?,?,?,?,NULL)').run(record.id,kind,record.restaurant,guest,JSON.stringify(record))}
+ async fetch(request){const url=new URL(request.url),origin=url.origin,app=await this.ensure(origin),response=await dispatch(app,request);
+  if(request.method!=='POST'||!url.pathname.endsWith('/lifecycle'))return response;
+  const next=this.db.prepare("SELECT MIN(json_extract(payload,'$.deleteAt')) AS deadline FROM restaurants WHERE json_extract(payload,'$.deleteAt') IS NOT NULL").get()?.deadline;
   if(next)await this.ctx.storage.setAlarm(next);else await this.ctx.storage.deleteAlarm();
   return response;
  }
- async alarm(){lifecycleModule.purgeDueRestaurants(this.db);const next=this.db.prepare('SELECT payload FROM restaurants').all().map(row=>JSON.parse(row.payload).deleteAt).filter(Number.isFinite).sort((a,b)=>a-b)[0];if(next)await this.ctx.storage.setAlarm(next)}
+ async alarm(){lifecycleModule.purgeDueRestaurants(this.db);const next=this.db.prepare("SELECT MIN(json_extract(payload,'$.deleteAt')) AS deadline FROM restaurants WHERE json_extract(payload,'$.deleteAt') IS NOT NULL").get()?.deadline;if(next)await this.ctx.storage.setAlarm(next)}
 }
-export default{async fetch(request,env){return env.PLATFORM.getByName('dayin-platform-v1').fetch(request)}};
+async function body(request){if(!request.headers.get('Content-Type')?.startsWith('application/json'))throw Object.assign(new Error('Нужен JSON'),{status:415});const reader=request.body?.getReader();if(!reader)return {};let text='',bytes=0,decoder=new TextDecoder();while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>20000){await reader.cancel();throw Object.assign(new Error('Слишком большой запрос'),{status:413})}text+=decoder.decode(value,{stream:true})}try{return JSON.parse(text+decoder.decode())}catch{throw Object.assign(new Error('Некорректный запрос'),{status:400})}}
+async function guestIdentity(request){const value=request.headers.get('Cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith('dayin_guest='))?.slice(12);const token=value&&/^[a-f0-9]{64}$/.test(value)?value:hex(crypto.getRandomValues(new Uint8Array(32)));return {id:hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token)))),cookie:value===token?null:`dayin_guest=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=31536000`}}
+function result(data,status=200,cookie){const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};if(cookie)headers['Set-Cookie']=cookie;return new Response(JSON.stringify(data),{status,headers})}
+export default{async fetch(request,env,ctx){const url=new URL(request.url),control=env.PLATFORM.getByName('dayin-platform-v1');try{
+  const staticFile=['/','/admin','/account','/register','/index.html','/app.js','/auth.js','/admin.js','/customer.js','/i18n.js','/style.css','/theme.css'].includes(url.pathname);
+  if(staticFile&&['GET','HEAD'].includes(request.method)){const assetUrl=new URL(request.url);if(['/','/admin','/account','/register'].includes(url.pathname))assetUrl.pathname='/index.html';const asset=await env.ASSETS.fetch(new Request(assetUrl,request));const headers=new Headers(asset.headers);headers.set('Cache-Control','no-cache');headers.set('X-Content-Type-Options','nosniff');headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://images.unsplash.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");return new Response(asset.body,{status:asset.status,headers})}
+  if(['POST','PATCH'].includes(request.method)&&request.headers.get('Origin')!==url.origin)return result({error:'Недопустимый источник запроса'},403);
+  if(['/api/orders','/api/bookings'].includes(url.pathname)&&request.method==='POST'){
+   const fields=await body(request),kind=url.pathname.slice(5),identity=await guestIdentity(request);if(typeof fields.restaurant!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(fields.restaurant))return result({error:'Заведение не найдено'},404);
+   const outcome=await env.RESTAURANTS.getByName(fields.restaurant).submit(fields.restaurant,fields,kind,identity.id,request.headers.get('CF-Connecting-IP')||'unknown',url.origin);return result(outcome,outcome.status||201,identity.cookie);
+  }
+  const recordMatch=url.pathname.match(/^\/api\/(orders|bookings)\/([^/]+)~([^/]+)$/);
+  if(recordMatch&&request.method==='PATCH'){const fields=await body(request),identity=await guestIdentity(request),user=fields.cancel?null:await control.authorize(request.headers.get('Cookie'),url.origin);if(user?.error)return result(user,user.status);const snapshot=await control.venue(recordMatch[2],url.origin);if(snapshot.error)return result(snapshot,snapshot.status);const outcome=await env.RESTAURANTS.getByName(recordMatch[2]).update(recordMatch[2]+'~'+recordMatch[3],recordMatch[1],fields,identity.id,user,url.origin);return result(outcome,outcome.status||200,identity.cookie)}
+  const lifecycle=url.pathname.match(/^\/api\/restaurants\/([^/]+)\/lifecycle$/);if(lifecycle&&request.method==='POST'){const response=await control.fetch(request);if(response.ok){const data=await response.clone().json();await env.RESTAURANTS.getByName(lifecycle[1]).lifecycle(data.restaurant.deleteAt)}return response}
+  if(request.method==='GET'&&(url.pathname==='/api/catalog'&&!url.searchParams.has('manage')||/^\/api\/restaurants\/[^/]+\/menu$/.test(url.pathname)&&!(request.headers.get('Cookie')||'').includes('dayin_session='))){const key=new Request(request.url,{method:'GET'}),cache=caches.default;const cached=await cache.match(key);if(cached)return cached;const response=await control.fetch(request);if(response.ok){const headers=new Headers(response.headers);headers.set('Cache-Control','public, max-age=20');ctx.waitUntil(cache.put(key,new Response(response.clone().body,{status:200,headers})))}return response}
+  return control.fetch(request);
+ }catch(error){return result({error:error.message||'Не удалось выполнить запрос'},Number.isInteger(error.status)?error.status:500)}}};

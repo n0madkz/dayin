@@ -7,6 +7,8 @@ const { DatabaseSync } = require('node:sqlite');
 const { customerAuth } = require('./future/customer-auth.cjs');
 const { RETENTION_MS, purgeDueRestaurants } = require('./restaurant-lifecycle.cjs');
 const { transaction } = require('./sqlite-transaction.cjs');
+const { catalogPage } = require('./catalog.cjs');
+const {createRecord}=require('./order-record.cjs');
 const scrypt = promisify(crypto.scrypt);
 const CUISINES = ['Европейская','Итальянская','Азиатская','Казахская','Грузинская','Узбекская','Турецкая','Японская','Корейская','Китайская','Индийская','Кофейни'];
 const escape = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -41,11 +43,12 @@ async function createApp(options = {}) {
   `);
   if (!db.prepare('PRAGMA table_info(records)').all().some(column => column.name === 'customer')) db.exec('ALTER TABLE records ADD COLUMN customer TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS records_customer ON records(customer); CREATE INDEX IF NOT EXISTS records_guest ON records(guest)');
+  db.exec("CREATE INDEX IF NOT EXISTS records_kind_restaurant ON records(kind,restaurant); CREATE INDEX IF NOT EXISTS restaurants_status ON restaurants(json_extract(payload,'$.status')); CREATE INDEX IF NOT EXISTS restaurants_delete_at ON restaurants(json_extract(payload,'$.deleteAt'))");
   db.prepare("DELETE FROM sessions WHERE user IN (SELECT id FROM users WHERE role='customer')").run();
   const allRestaurants = () => db.prepare('SELECT payload FROM restaurants ORDER BY rowid').all().map(x => JSON.parse(x.payload));
   const getMenu = id => JSON.parse(db.prepare('SELECT payload FROM menus WHERE restaurant=?').get(id)?.payload || '[]');
   const getRestaurant = id => { const row = db.prepare('SELECT payload FROM restaurants WHERE id=?').get(id); if (!row) fail(404, 'Заведение не найдено'); return JSON.parse(row.payload); };
-  const putRestaurant = r => { r.maxGuests ??= 8; r.halal ??= null; r.cuisines ??= [r.type || 'Европейская']; r.status ??= 'active'; r.deleteAt ??= null; return db.prepare('INSERT OR REPLACE INTO restaurants VALUES (?,?)').run(r.id, JSON.stringify(r)); };
+  const putRestaurant = r => { r.maxGuests ??= 8; r.halal ??= null; r.cuisines ??= [r.type || 'Европейская']; r.status ??= 'active'; r.deleteAt ??= null; r.city ??= 'Атырау'; return db.prepare('INSERT OR REPLACE INTO restaurants VALUES (?,?)').run(r.id, JSON.stringify(r)); };
   const available = r => r.status === 'active' && !r.deleteAt;
   const putMenu = (id, items) => db.prepare('INSERT OR REPLACE INTO menus VALUES (?,?)').run(id, JSON.stringify(items));
   const credentials = (user, temporary) => `Здравствуйте, ${user.name}!\n\nВаша учётная запись Dayin зарегистрирована.\nЛогин: ${user.email}\nВременный пароль: ${temporary}\nЛичный кабинет: ${origin}${user.role === 'admin' ? '/admin' : '/account'}\n\nПри первом входе обязательно задайте новый пароль и повторите его. До смены пароля кабинет недоступен. Временный пароль действует 24 часа.\n\nDayin`;
@@ -86,7 +89,7 @@ async function createApp(options = {}) {
   }
   // The sole starter is a registered local account, not an invented real owner.
   if (!db.prepare("SELECT value FROM settings WHERE key='initialized'").get()) {
-    const r = { id: 'r1', name: 'Зелёный двор', type: 'Европейская', desc: 'Сезонная кухня · Уютный дворик', address: 'ул. Панфилова, 114', rating: '—', time: '25–35', avg: 6500, img: 'photo-1414235077428-338989a2e8c0', tag: 'Зарегистрированное заведение', registered: true };
+    const r = { id: 'r1', name: 'Зелёный двор', type: 'Европейская', desc: 'Сезонная кухня · Уютный дворик', address: 'Атырау · адрес уточняется', rating: '—', time: '25–35', avg: 6500, img: 'photo-1414235077428-338989a2e8c0', tag: 'Зарегистрированное заведение', registered: true };
     putRestaurant(r);
     putMenu('r1', [
       { id: 'd1', name: 'Салат с burrata', desc: 'Томаты, буррата, базилик · 240 г', price: 3900, img: 'photo-1515543904379-3d757afe72e4' },
@@ -111,7 +114,7 @@ async function createApp(options = {}) {
     db.prepare("INSERT INTO settings VALUES ('initialized','1')").run();
   }
   // Existing restaurants retain the previous booking limit until their owner changes it.
-  for (const r of allRestaurants()) if (r.maxGuests === undefined || r.halal === undefined || r.cuisines === undefined || r.status === undefined || r.deleteAt === undefined) putRestaurant(r);
+  for (const r of allRestaurants()) if (r.maxGuests === undefined || r.halal === undefined || r.cuisines === undefined || r.status === undefined || r.deleteAt === undefined || r.city === undefined) { if(r.id==='r1'&&r.address==='ул. Панфилова, 114')r.address='Атырау · адрес уточняется'; putRestaurant(r); }
   const purge = () => purgeDueRestaurants(db, lifecycleNow());
   purge();
   const attempts = new Map();
@@ -150,7 +153,7 @@ async function createApp(options = {}) {
     try { return JSON.parse(data); } catch { fail(400, 'Некорректный запрос'); }
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); }
-  function records(kind, where, key) { return db.prepare(`SELECT payload FROM records WHERE kind=? AND ${where}=?${where === 'guest' ? ' AND customer IS NULL' : ''} ORDER BY rowid DESC`).all(kind, key).map(x => JSON.parse(x.payload)); }
+  function records(kind, where, key) { return db.prepare(`SELECT payload FROM records WHERE kind=? AND ${where}=?${where === 'guest' ? ' AND customer IS NULL' : ''} ORDER BY rowid DESC LIMIT 100`).all(kind, key).map(x => JSON.parse(x.payload)); }
   const server = (options.createServer || http.createServer)(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'same-origin'); res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://images.unsplash.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
@@ -174,8 +177,14 @@ async function createApp(options = {}) {
       purge();
       if (p === '/api/catalog' && req.method === 'GET') {
         const u = url.searchParams.get('manage') === '1' ? authenticated(req) : null;
-        const restaurants = allRestaurants().filter(r => u?.role === 'admin' || (u?.role === 'owner' && u.restaurant === r.id) || available(r));
-        return json(res, 200, { restaurants, menus: Object.fromEntries(restaurants.map(r => [r.id, getMenu(r.id)])), cuisines: CUISINES });
+        const result=catalogPage(db,url.searchParams,u);
+        if(u?.role==='owner')result.menus={[u.restaurant]:getMenu(u.restaurant)};
+        return json(res, 200, result);
+      }
+      const publicMenu=p.match(/^\/api\/restaurants\/([^/]+)\/menu$/);
+      if(publicMenu&&req.method==='GET'){
+        const r=getRestaurant(publicMenu[1]),u=session(req);if(!available(r)&&!(u&&!u.must_change&&(u.role==='admin'||u.restaurant===r.id)))fail(404,'Заведение временно недоступно');
+        return json(res,200,{restaurant:r,menu:getMenu(r.id)});
       }
       const qrMatch = p.match(/^\/api\/restaurants\/([^/]+)\/qr$/);
       if (qrMatch && req.method === 'GET') {
@@ -241,27 +250,14 @@ async function createApp(options = {}) {
       if (p === '/api/account' && req.method === 'GET') {
         const u = authenticated(req), id = u.restaurant;
         if (!['owner', 'admin'].includes(u.role)) fail(403, 'Нет доступа к кабинету ресторана');
-        return json(res, 200, { user: publicUser(u), restaurants: u.role === 'admin' ? allRestaurants() : [getRestaurant(id)], orders: u.role === 'admin' ? db.prepare("SELECT payload FROM records WHERE kind='orders' ORDER BY rowid DESC").all().map(x => JSON.parse(x.payload)) : records('orders', 'restaurant', id), bookings: u.role === 'admin' ? db.prepare("SELECT payload FROM records WHERE kind='bookings' ORDER BY rowid DESC").all().map(x => JSON.parse(x.payload)) : records('bookings', 'restaurant', id), owners: u.role === 'admin' ? db.prepare("SELECT email,name,restaurant,delivery FROM users WHERE role='owner'").all() : [] });
+        return json(res, 200, { user: publicUser(u), stats:{restaurants:db.prepare('SELECT COUNT(*) AS n FROM restaurants').get().n,orders:db.prepare("SELECT COUNT(*) AS n FROM records WHERE kind='orders'").get().n,bookings:db.prepare("SELECT COUNT(*) AS n FROM records WHERE kind='bookings'").get().n}, restaurants: u.role === 'admin' ? catalogPage(db,url.searchParams,u).restaurants : [getRestaurant(id)], orders: u.role === 'admin' ? db.prepare("SELECT payload FROM records WHERE kind='orders' ORDER BY rowid DESC LIMIT 100").all().map(x => JSON.parse(x.payload)) : records('orders', 'restaurant', id), bookings: u.role === 'admin' ? db.prepare("SELECT payload FROM records WHERE kind='bookings' ORDER BY rowid DESC LIMIT 100").all().map(x => JSON.parse(x.payload)) : records('bookings', 'restaurant', id), owners: u.role === 'admin' ? db.prepare("SELECT email,name,restaurant,delivery FROM users WHERE role='owner'").all() : [] });
       }
       if (p === '/api/my' && req.method === 'GET') { const id = guest(req, res), where = 'guest'; return json(res, 200, { orders: records('orders', where, id), bookings: records('bookings', where, id) }); }
       if ((p === '/api/orders' || p === '/api/bookings') && req.method === 'POST') {
         limit('record:' + req.socket.remoteAddress, 60); const f = await body(req); const venue = getRestaurant(f.restaurant);
         if (!available(venue)) fail(409, 'Заведение временно не принимает заказы и бронирования');
-        const name = text(f.name, 'Имя', 80), phone = text(f.phone, 'Телефон', 20); if (!/^[+0-9 ()-]{10,20}$/.test(phone)) fail(400, 'Проверьте телефон');
-        const note = typeof f.note === 'string' ? f.note.slice(0, 300) : '';
         const kind = p === '/api/orders' ? 'orders' : 'bookings', id = crypto.randomUUID();
-        let record = { id, restaurant: f.restaurant, name, phone, note };
-        if (kind === 'orders') {
-          if (!['delivery', 'pickup'].includes(f.mode) || !Array.isArray(f.items) || !f.items.length || f.items.length > 100) fail(400, 'Некорректный заказ');
-          const seen = new Set();
-          const items = f.items.map(item => { const d = getMenu(f.restaurant).find(d => d.id === item.id); if (!d || !Number.isInteger(item.qty) || item.qty < 1 || item.qty > 99 || seen.has(item.id)) fail(400, 'Проверьте состав заказа'); seen.add(item.id); return { ...d, qty: item.qty }; });
-          record = { ...record, items, total: items.reduce((s, d) => s + d.price * d.qty, 0) + (f.mode === 'delivery' ? 900 : 0), address: f.mode === 'delivery' ? text(f.address, 'Адрес', 200) : '', mode: f.mode === 'delivery' ? 'Доставка' : 'Самовывоз', status: 'Новый', date: new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Bishkek' }) };
-        } else {
-          const when = Date.parse(`${f.date}T${f.time}:00+06:00`);
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date) || !['12:00','13:00','14:00','17:00','18:00','19:00','20:00','21:00'].includes(f.time) || !Number.isFinite(when) || when <= Date.now() || !Number.isInteger(Number(f.guests)) || Number(f.guests) < 1) fail(400, 'Проверьте дату, время и количество гостей');
-          if (Number(f.guests) > venue.maxGuests) fail(400, `Ресторан принимает максимум ${venue.maxGuests} гостей в одной брони. Выберите меньшее количество.`);
-          record = { ...record, date: f.date, time: f.time, guests: String(f.guests), status: 'Ожидает подтверждения' };
-        }
+        const record = createRecord(kind,f,venue,getMenu(f.restaurant),id);
         const customer = null;
         db.prepare('INSERT INTO records (id,kind,restaurant,guest,payload,customer) VALUES (?,?,?,?,?,?)').run(id, kind, f.restaurant, guest(req, res), JSON.stringify(record), customer); return json(res, 201, { record });
       }
@@ -353,7 +349,7 @@ async function createApp(options = {}) {
       if (!['GET', 'HEAD'].includes(req.method)) fail(405, 'Метод не поддерживается');
       if (/^\/menu\/[^/]+$/.test(p) && !available(getRestaurant(decodeURIComponent(p.slice(6))))) fail(404, 'Заведение временно недоступно');
       const asset = ['/', '/account', '/admin', '/register'].includes(p) || /^\/menu\/[^/]+$/.test(p) ? 'index.html' : p.slice(1);
-      if (!['index.html','style.css','theme.css','app.js','auth.js','admin.js','customer.js'].includes(asset)) fail(404, 'Не найдено');
+      if (!['index.html','style.css','theme.css','app.js','i18n.js','auth.js','admin.js','customer.js'].includes(asset)) fail(404, 'Не найдено');
       const data = options.readAsset ? await options.readAsset(asset) : fs.readFileSync(path.join(__dirname, 'dist', asset));
       res.writeHead(200, { 'Content-Type': asset.endsWith('.css') ? 'text/css; charset=utf-8' : asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? '' : data);
     } catch (e) { if (!res.headersSent) json(res, e.status || 500, { error: e.status ? e.message : 'Не удалось выполнить запрос' }); else res.end(); }

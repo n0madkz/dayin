@@ -3,7 +3,7 @@ test('admin uses an independent workspace with working operational sections',asy
  const elements={},el=s=>elements[s]||(elements[s]={innerHTML:'',addEventListener(){},showModal(){}});
  const user={role:'admin',name:'Администратор',mustChangePassword:false},r={id:'r1',name:'Зелёный двор',type:'Европейская',address:'Алматы',halal:{status:'pending',issuer:'Организация',number:'CERT-1'}};
  const data={'/api/auth/session':{user},'/api/catalog':{restaurants:[r],menus:{r1:[]}},'/api/account':{user,restaurants:[r],orders:[],bookings:[],owners:[{restaurant:'r1',name:'Владелец',email:'owner@example.test',delivery:'local'}]}};
- const context=vm.createContext({document:{querySelector:el},localStorage:{getItem:()=>null,setItem(){}},location:{pathname:'/admin',origin:'http://127.0.0.1:4173'},fetch:async url=>({ok:true,json:async()=>data[url.split('?')[0]]}),console,setTimeout:()=>1,clearTimeout(){},window:{scrollTo(){}}});
+ const context=vm.createContext({document:{querySelector:el},localStorage:{getItem:()=>null,setItem(){}},location:{pathname:'/admin',origin:'http://127.0.0.1:4173'},fetch:async url=>({ok:true,json:async()=>data[url.split('?')[0]]}),console,setTimeout:()=>1,clearTimeout(){},URLSearchParams,window:{scrollTo(){}}});
  for(const script of ['app','auth','admin','customer'])vm.runInContext(fs.readFileSync(`dist/${script}.js`,'utf8'),context);
  await vm.runInContext('appReady',context);
  // openWorkspace is started by renderAccount; wait for its asynchronous catalog/account refresh.
