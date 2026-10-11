@@ -5,7 +5,10 @@
   "scripts": {
     "start": "node server.cjs",
     "start:local": "node start-local.cjs",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "cloudflare:dev": "wrangler dev",
+    "cloudflare:check": "wrangler deploy --dry-run",
+    "cloudflare:deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=24"
@@ -15,6 +18,7 @@
   },
   "devDependencies": {
     "jsqr": "1.4.0",
-    "pngjs": "5.0.0"
+    "pngjs": "5.0.0",
+    "wrangler": "^4.149.0"
   }
 }

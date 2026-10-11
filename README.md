@@ -1,5 +1,9 @@
 # Dayin
 
+Cloudflare: https://dayin.aidin99mail-ru.workers.dev. Полная облачная версия использует Workers и постоянную SQLite-базу Durable Object; локальная база не переносится. Нижняя навигация видна только на мобильном экране, на ПК используется левое меню.
+
+Команды Cloudflare: `npm run cloudflare:dev`, `npm run cloudflare:check`, `npm run cloudflare:deploy`. При первой настройке выполните `node cloudflare/create-secrets.cjs`, затем `npx wrangler login`, `npx wrangler secret bulk .runtime/cloudflare-secrets.json` и deploy. Не меняйте PASSWORD_PEPPER после создания учётных записей. Первоначальный доступ сохранён в `.runtime/cloudflare-access.md` и исключён из Git. В облаке обязательна смена временного пароля; `/dev/mail` отключён. Для регистрации новых владельцев с отправкой писем нужны секрет RESEND_API_KEY и настройка MAIL_FROM с подтверждённым доменом. Отложенное удаление выполняется через Durable Object alarm и при запросах.
+
 Локальная платформа: каталог, меню, доставка, самовывоз, брони, кабинет владельца и админка. Нужен Node.js 24+. Перед первым запуском выполните npm ci.
 
 Запуск: npm run start:local

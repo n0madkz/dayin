@@ -6,6 +6,7 @@ const { promisify } = require('node:util');
 const { DatabaseSync } = require('node:sqlite');
 const { customerAuth } = require('./future/customer-auth.cjs');
 const { RETENTION_MS, purgeDueRestaurants } = require('./restaurant-lifecycle.cjs');
+const { transaction } = require('./sqlite-transaction.cjs');
 const scrypt = promisify(crypto.scrypt);
 const CUISINES = ['Европейская','Итальянская','Азиатская','Казахская','Грузинская','Узбекская','Турецкая','Японская','Корейская','Китайская','Индийская','Кофейни'];
 const escape = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -13,20 +14,23 @@ const fail = (status, message) => { throw Object.assign(new Error(message), { st
 const text = (v, name, max = 200) => { if (typeof v !== 'string' || !v.trim() || v.trim().length > max) fail(400, `Проверьте поле «${name}»`); return v.trim(); };
 const email = v => { const x = text(v, 'Почта', 254).toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)) fail(400, 'Укажите корректную почту'); return x; };
 const hashToken = token => crypto.createHash('sha256').update(token).digest('hex');
-async function passwordHash(password) { const salt = crypto.randomBytes(16).toString('hex'); return salt + ':' + (await scrypt(password, salt, 64)).toString('hex'); }
-async function passwordMatches(password, hash) { const [salt, digest] = hash.split(':'); const actual = await scrypt(password, salt, 64); return crypto.timingSafeEqual(actual, Buffer.from(digest, 'hex')); }
+async function scryptPasswordHash(password) { const salt = crypto.randomBytes(16).toString('hex'); return salt + ':' + (await scrypt(password, salt, 64)).toString('hex'); }
+async function scryptPasswordMatches(password, hash) { const [salt, digest] = hash.split(':'); const actual = await scrypt(password, salt, 64); return crypto.timingSafeEqual(actual, Buffer.from(digest, 'hex')); }
 
 async function createApp(options = {}) {
+  const config = options.env || process.env;
+  const passwordHash=options.passwordHash||scryptPasswordHash,passwordMatches=options.passwordMatches||scryptPasswordMatches;
   const lifecycleNow = options.lifecycleNow || Date.now;
   const localMail = options.localMail ?? process.env.MAIL_MODE === 'local';
   const port = options.port ?? Number(process.env.PORT || 4173);
   const origin = options.origin || process.env.APP_URL || `http://127.0.0.1:${port}`;
-  const runtime = options.dataDir || process.env.DATA_DIR || path.join(__dirname, '.runtime');
-  fs.mkdirSync(runtime, { recursive: true });
+  const runtime = options.db ? null : (options.dataDir || process.env.DATA_DIR || path.join(__dirname, '.runtime'));
+  if (!options.db) fs.mkdirSync(runtime, { recursive: true });
   if (localMail && !['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) throw new Error('Локальная почта разрешена только на loopback');
-  if (!localMail && !origin.startsWith('https://')) throw new Error('Для почтового режима нужен HTTPS APP_URL');
-  const db = new DatabaseSync(path.join(runtime, 'dayin.sqlite'));
-  db.exec(`PRAGMA journal_mode=WAL;
+  if (!localMail && !origin.startsWith('https://') && !(options.bootstrap && ['127.0.0.1','localhost'].includes(new URL(origin).hostname))) throw new Error('Для почтового режима нужен HTTPS APP_URL');
+  const db = options.db || new DatabaseSync(path.join(runtime, 'dayin.sqlite'));
+  if (!options.db) db.exec('PRAGMA journal_mode=WAL');
+  db.exec(`
     CREATE TABLE IF NOT EXISTS restaurants (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS menus (restaurant TEXT PRIMARY KEY, payload TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, restaurant TEXT, role TEXT NOT NULL, hash TEXT NOT NULL, must_change INTEGER NOT NULL, temp_expires INTEGER, delivery TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0);
@@ -52,11 +56,11 @@ async function createApp(options = {}) {
       db.prepare('INSERT INTO mailbox VALUES (?,?,?,?,?)').run(crypto.randomUUID(), user.email, subject, body, Date.now());
       return 'local';
     }
-    if (!process.env.RESEND_API_KEY || !process.env.MAIL_FROM) fail(503, 'Отправка писем не настроена. Обратитесь к администратору.');
+    if (!config.RESEND_API_KEY || !config.MAIL_FROM) fail(503, 'Отправка писем не настроена. Обратитесь к администратору.');
     let response;
     try { response = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': `registration-${user.id}-${hashToken(temporary)}` },
-      body: JSON.stringify({ from: process.env.MAIL_FROM, to: [user.email], subject, text: body, html: `<div style="font:16px/1.7 Arial;color:#252b26"><h1>Добро пожаловать в Dayin</h1><p>${escape(body).replace(/\n/g, '<br>')}</p></div>` }), signal: AbortSignal.timeout(15000)
+      method: 'POST', headers: { Authorization: `Bearer ${config.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': `registration-${user.id}-${hashToken(temporary)}` },
+      body: JSON.stringify({ from: config.MAIL_FROM, to: [user.email], subject, text: body, html: `<div style="font:16px/1.7 Arial;color:#252b26"><h1>Добро пожаловать в Dayin</h1><p>${escape(body).replace(/\n/g, '<br>')}</p></div>` }), signal: AbortSignal.timeout(15000)
     }); } catch { fail(503, 'Почтовый сервис недоступен. Повторите попытку позже.'); }
     if (!response.ok) fail(503, 'Письмо не принято почтовым сервисом. Обратитесь к администратору.');
     return 'accepted';
@@ -90,7 +94,13 @@ async function createApp(options = {}) {
       { id: 'd3', name: 'Лосось на гриле', desc: 'Сезонные овощи, лимонный соус · 280 г', price: 6500, img: 'photo-1467003909585-2f8a72700288' },
       { id: 'd4', name: 'Тирамису', desc: 'Маскарпоне, эспрессо, какао · 150 г', price: 2400, img: 'photo-1571877227200-a0d98ea607e9' }
     ]);
-    if (localMail) {
+    if (options.bootstrap) {
+      for(const [role,restaurant,address,name,temporary] of [['admin',null,'admin@dayin.test','Администратор платформы',options.bootstrap.admin],['owner','r1','aidos@dayin.test','Сәрсенов Айдос Нұрланұлы',options.bootstrap.owner]]){
+        if(typeof temporary!=='string'||temporary.length<12)throw Error('Задайте секреты первоначального доступа');
+        const hash=await passwordHash(temporary);
+        db.prepare('INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?,?)').run(crypto.randomUUID(),address,name,restaurant,role,hash,1,Date.now()+86400000,'bootstrap',1);
+      }
+    } else if (localMail) {
       await registerUser({ email: 'aidos@dayin.test', name: 'Сәрсенов Айдос Нұрланұлы', restaurant: 'r1' });
       await registerUser({ email: 'admin@dayin.test', name: 'Администратор платформы', role: 'admin' });
     } else {
@@ -141,7 +151,7 @@ async function createApp(options = {}) {
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); }
   function records(kind, where, key) { return db.prepare(`SELECT payload FROM records WHERE kind=? AND ${where}=?${where === 'guest' ? ' AND customer IS NULL' : ''} ORDER BY rowid DESC`).all(kind, key).map(x => JSON.parse(x.payload)); }
-  const server = http.createServer(async (req, res) => {
+  const server = (options.createServer || http.createServer)(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'same-origin'); res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://images.unsplash.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     try {
@@ -177,7 +187,7 @@ async function createApp(options = {}) {
         const size = Number(url.searchParams.get('size') || 1024);
         if (![512, 1024, 2048].includes(size)) fail(400, 'Недопустимый размер QR-кода');
         limit('qr:' + u.id, 100);
-        const QRCode = require('qrcode');
+        const QRCode = require('qrcode/lib/server');
         const options = { errorCorrectionLevel: 'Q', margin: 4, width: size, color: { dark: '#000000ff', light: '#ffffffff' } };
         const data = format === 'svg' ? await QRCode.toString(menuUrl, { ...options, type: 'svg' }) : await QRCode.toBuffer(menuUrl, { ...options, type: 'png' });
         res.writeHead(200, { 'Content-Type': format === 'svg' ? 'image/svg+xml; charset=utf-8' : 'image/png', 'Cache-Control': 'no-store', 'Content-Disposition': `${url.searchParams.get('download') === '1' ? 'attachment' : 'inline'}; filename="dayin-menu-${id}.${format}"` });
@@ -218,13 +228,12 @@ async function createApp(options = {}) {
         if (f.password !== f.confirmPassword) fail(400, 'Пароли не совпадают');
         if (await passwordMatches(f.password, u.hash)) fail(400, 'Новый пароль должен отличаться от временного');
         const newHash = await passwordHash(f.password), token = crypto.randomBytes(32).toString('hex');
-        db.exec('BEGIN'); try {
+        transaction(db,()=>{
           const changed = db.prepare('UPDATE users SET hash=?,must_change=0,temp_expires=NULL WHERE id=? AND hash=? AND must_change=1').run(newHash, u.id, u.hash);
           if (!changed.changes) fail(409, 'Пароль уже изменён. Войдите снова.');
           db.prepare('DELETE FROM sessions WHERE user=?').run(u.id);
           db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(hashToken(token), u.id, Date.now() + 28800000);
-          db.exec('COMMIT');
-        } catch (e) { db.exec('ROLLBACK'); throw e; }
+        });
         setCookie(res, 'dayin_session', token, 28800);
         return json(res, 200, { user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(u.id)) });
       }
@@ -345,12 +354,12 @@ async function createApp(options = {}) {
       if (/^\/menu\/[^/]+$/.test(p) && !available(getRestaurant(decodeURIComponent(p.slice(6))))) fail(404, 'Заведение временно недоступно');
       const asset = ['/', '/account', '/admin', '/register'].includes(p) || /^\/menu\/[^/]+$/.test(p) ? 'index.html' : p.slice(1);
       if (!['index.html','style.css','theme.css','app.js','auth.js','admin.js','customer.js'].includes(asset)) fail(404, 'Не найдено');
-      const data = fs.readFileSync(path.join(__dirname, 'dist', asset));
+      const data = options.readAsset ? await options.readAsset(asset) : fs.readFileSync(path.join(__dirname, 'dist', asset));
       res.writeHead(200, { 'Content-Type': asset.endsWith('.css') ? 'text/css; charset=utf-8' : asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? '' : data);
     } catch (e) { if (!res.headersSent) json(res, e.status || 500, { error: e.status ? e.message : 'Не удалось выполнить запрос' }); else res.end(); }
   });
-  const cleanupTimer = setInterval(() => { try { purge(); } catch { console.error('Не удалось выполнить отложенное удаление заведений'); } }, 60000);
-  cleanupTimer.unref();
+  const cleanupTimer = options.disableTimer ? null : setInterval(() => { try { purge(); } catch { console.error('Не удалось выполнить отложенное удаление заведений'); } }, 60000);
+  cleanupTimer?.unref();
   return { server, db, origin, close: () => new Promise(resolve => { clearInterval(cleanupTimer); server.close(() => { db.close(); resolve(); }); }) };
 }
 if (require.main === module) createApp().then(app => app.server.listen(Number(process.env.PORT || 4173), '127.0.0.1', () => console.log(`Dayin: ${app.origin}${process.env.MAIL_MODE === 'local' ? '\nЛокальная почта: ' + app.origin + '/dev/mail' : ''}`))).catch(e => { console.error(e.message); process.exitCode = 1; });

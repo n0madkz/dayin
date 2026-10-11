@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 .openai/
+.wrangler/
+.dev.vars*
+worker-configuration.d.ts
 *.zip
 *.tar.gz
 node_modules/
