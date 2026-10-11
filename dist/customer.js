@@ -1,5 +1,6 @@
+function cityChevron(){return '<svg class="city-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'}
 let selectedCity='Атырау';
-function cityControl(){return `<button class="location city-control" type="button" aria-label="Выбрать город" onclick="chooseCity()">${icon('pin')}<span>${esc(selectedCity)}<small>Ваш город</small></span><span class="city-chevron" aria-hidden="true">⌄</span></button>`}
+function cityControl(){return `<button class="location city-control" type="button" aria-label="Выбрать город" onclick="chooseCity()">${icon('pin')}<span>${esc(selectedCity)}<small>Ваш город</small></span>${cityChevron()}</button>`}
 function chooseCity(){modal('Выберите город',`<p>Сейчас сервис доступен в Атырау.</p><button class="city-option" type="button" onclick="selectCity('Атырау')">${icon('pin')}<strong>Атырау</strong><span aria-hidden="true">✓</span></button>`)}
 function selectCity(city){if(city!=='Атырау')return;selectedCity=city;localStorage.setItem('dayin-city',city);$('#modal').close();render()}
 let cuisineTypes=['Европейская','Итальянская','Азиатская','Казахская','Грузинская','Узбекская','Турецкая','Японская','Корейская','Китайская','Индийская','Кофейни'];

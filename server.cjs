@@ -356,9 +356,9 @@ async function createApp(options = {}) {
       if (!['GET', 'HEAD'].includes(req.method)) fail(405, 'Метод не поддерживается');
       if (/^\/menu\/[^/]+$/.test(p) && !available(getRestaurant(decodeURIComponent(p.slice(6))))) fail(404, 'Заведение временно недоступно');
       const asset = ['/', '/account', '/admin', '/register'].includes(p) || /^\/menu\/[^/]+$/.test(p) ? 'index.html' : p.slice(1);
-      if (!['index.html','style.css','theme.css','app.js','i18n.js','auth.js','admin.js','customer.js'].includes(asset)) fail(404, 'Не найдено');
+      if (!['InterVariable.woff2','Inter-LICENSE.txt','index.html','style.css','theme.css','app.js','i18n.js','auth.js','admin.js','customer.js'].includes(asset)) fail(404, 'Не найдено');
       const data = options.readAsset ? await options.readAsset(asset) : fs.readFileSync(path.join(__dirname, 'dist', asset));
-      res.writeHead(200, { 'Content-Type': asset.endsWith('.css') ? 'text/css; charset=utf-8' : asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? '' : data);
+      res.writeHead(200, { 'Content-Type': asset.endsWith('.woff2') ? 'font/woff2' : asset.endsWith('.txt') ? 'text/plain; charset=utf-8' : asset.endsWith('.css') ? 'text/css; charset=utf-8' : asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? '' : data);
     } catch (e) { if (!res.headersSent) json(res, e.status || 500, { error: e.status ? e.message : 'Не удалось выполнить запрос' }); else res.end(); }
   });
   const cleanupTimer = options.disableTimer ? null : setInterval(() => { try { purge(); } catch { console.error('Не удалось выполнить отложенное удаление заведений'); } }, 60000);
