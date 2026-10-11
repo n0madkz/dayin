@@ -14,6 +14,11 @@ test('multiple cuisines, admin-only statuses, password-confirmed deferred deleti
   await owner('/api/auth/login','POST',{email:'aidos@dayin.test',password:temp('aidos@dayin.test')});await owner('/api/auth/password','POST',{password:ownerPassword,confirmPassword:ownerPassword});
   const settings={name:'Зелёный двор',desc:'Кухня',address:'Алматы',avg:5000,maxGuests:8,cuisines:['Казахская','Европейская']};
   const edited=await owner('/api/restaurants/r1','PATCH',settings);assert.equal(edited.status,200);assert.deepEqual(edited.body.restaurant.cuisines,settings.cuisines);
+  const threshold=await owner('/api/restaurants/r1','PATCH',{...settings,freeDeliveryAbove:10000});assert.equal(threshold.status,200);assert.equal(threshold.body.restaurant.freeDeliveryAbove,10000);
+  assert.equal((await guest('/api/catalog')).body.restaurants[0].freeDeliveryAbove,10000);
+  for(const freeDeliveryAbove of [-1,1.5,1000001,'invalid'])assert.equal((await owner('/api/restaurants/r1','PATCH',{...settings,freeDeliveryAbove})).status,400);
+  assert.equal((await guest('/api/restaurants/r1','PATCH',{...settings,freeDeliveryAbove:0})).status,401);
+  const cleared=await owner('/api/restaurants/r1','PATCH',{...settings,freeDeliveryAbove:''});assert.equal(cleared.body.restaurant.freeDeliveryAbove,null);
   for(const cuisines of [[],['Unknown'],['Казахская','Казахская'],'Казахская'])assert.equal((await owner('/api/restaurants/r1','PATCH',{...settings,cuisines})).status,400);
   const lifecycle='/api/restaurants/r1/lifecycle';
   assert.equal((await guest(lifecycle,'POST',{action:'status',status:'inactive'})).status,401);

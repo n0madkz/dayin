@@ -318,6 +318,11 @@ async function createApp(options = {}) {
         if (!Array.isArray(cuisines) || !cuisines.length || cuisines.length > CUISINES.length || cuisines.some(c => !CUISINES.includes(c)) || new Set(cuisines).size !== cuisines.length) fail(400, 'Выберите хотя бы одну кухню из списка');
         r.cuisines = cuisines; r.type = cuisines[0];
         r.avg = Number(f.avg); if (!Number.isInteger(r.avg) || r.avg < 1 || r.avg > 1000000) fail(400, 'Проверьте средний чек');
+        if (f.freeDeliveryAbove !== undefined) {
+          const threshold = f.freeDeliveryAbove === '' || f.freeDeliveryAbove === null ? null : Number(f.freeDeliveryAbove);
+          if (threshold !== null && (!Number.isInteger(threshold) || threshold < 0 || threshold > 1000000)) fail(400, 'Проверьте сумму для бесплатной доставки');
+          r.freeDeliveryAbove = threshold;
+        }
         if (f.maxGuests !== undefined) {
           const maxGuests = Number(f.maxGuests);
           if (!Number.isInteger(maxGuests) || maxGuests < 1 || maxGuests > 100) fail(400, 'Максимум гостей должен быть целым числом от 1 до 100');

@@ -8,7 +8,8 @@ function createRecord(kind,fields,venue,menu,id=crypto.randomUUID()){
  if(kind==='orders'){
   if(!['delivery','pickup'].includes(fields.mode)||!Array.isArray(fields.items)||!fields.items.length||fields.items.length>100)fail(400,'Некорректный заказ');
   const seen=new Set(),items=fields.items.map(item=>{const dish=menu.find(d=>d.id===item.id);if(!dish||!Number.isInteger(item.qty)||item.qty<1||item.qty>99||seen.has(item.id))fail(400,'Проверьте состав заказа');seen.add(item.id);return {...dish,qty:item.qty}});
-  record={...record,items,total:items.reduce((sum,d)=>sum+d.price*d.qty,0)+(fields.mode==='delivery'?900:0),address:fields.mode==='delivery'?text(fields.address,'Адрес',200):'',mode:fields.mode==='delivery'?'Доставка':'Самовывоз',status:'Новый',date:new Date().toLocaleString('ru-RU',{timeZone:'Asia/Bishkek'})};
+  const subtotal=items.reduce((sum,d)=>sum+d.price*d.qty,0),freeDelivery=fields.mode==='delivery'&&Number.isInteger(venue.freeDeliveryAbove)&&subtotal>venue.freeDeliveryAbove;
+  record={...record,items,total:subtotal,subtotal,freeDelivery,deliveryFee:fields.mode==='pickup'||freeDelivery?0:null,freeDeliveryAbove:venue.freeDeliveryAbove??null,address:fields.mode==='delivery'?text(fields.address,'Адрес',200):'',mode:fields.mode==='delivery'?'Доставка':'Самовывоз',status:'Новый',date:new Date().toLocaleString('ru-RU',{timeZone:'Asia/Bishkek'})};
  }else{
   const when=Date.parse(`${fields.date}T${fields.time}:00+06:00`),guests=Number(fields.guests);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(fields.date)||!['12:00','13:00','14:00','17:00','18:00','19:00','20:00','21:00'].includes(fields.time)||!Number.isFinite(when)||when<=Date.now()||!Number.isInteger(guests)||guests<1)fail(400,'Проверьте дату, время и количество гостей');

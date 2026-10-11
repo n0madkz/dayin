@@ -39,7 +39,7 @@ test('registration, first-login gate, tenant and guest isolation, server storage
     await other('/api/auth/login','POST',secondCredentials);await other('/api/auth/password','POST',{password:'second-password-long',confirmPassword:'second-password-long'});
     const account=await other('/api/account');assert.equal(account.body.restaurants.length,1);assert.notEqual(account.body.restaurants[0].id,'r1');
     assert.equal((await other('/api/restaurants/r1/menu','POST',{name:'Forbidden',desc:'x',price:100})).status,403);
-    const order=await guest('/api/orders','POST',{name:'Гость',phone:'+77001234567',restaurant:'r1',mode:'delivery',address:'Алматы, 1',items:[{id:'d1',qty:2}],total:1});assert.equal(order.status,201);assert.equal(order.body.record.total,8700);
+    const order=await guest('/api/orders','POST',{name:'Гость',phone:'+77001234567',restaurant:'r1',mode:'delivery',address:'Алматы, 1',items:[{id:'d1',qty:2}],total:1});assert.equal(order.status,201);assert.equal(order.body.record.total,7800);
     assert.equal((await guest2('/api/my')).body.orders.length,0);
     assert.equal((await guest2('/api/orders/'+order.body.record.id,'PATCH',{cancel:true})).status,403);
     assert.equal((await other('/api/orders/'+order.body.record.id,'PATCH',{status:'Принят'})).status,403);
