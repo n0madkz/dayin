@@ -1,3 +1,4 @@
+const {validatePhoto,MAX_PHOTO}=require('./dish-photo.cjs');
 const {DISH_CATEGORIES,dishCategory}=require('./dish-categories.cjs');
 const http = require('node:http');
 const fs = require('node:fs');
@@ -34,6 +35,7 @@ async function createApp(options = {}) {
   const db = options.db || new DatabaseSync(path.join(runtime, 'dayin.sqlite'));
   if (!options.db) db.exec('PRAGMA journal_mode=WAL');
   db.exec(`
+    CREATE TABLE IF NOT EXISTS dish_photos(id TEXT PRIMARY KEY,restaurant TEXT NOT NULL,type TEXT NOT NULL,data BLOB NOT NULL);
     CREATE TABLE IF NOT EXISTS restaurants (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS menus (restaurant TEXT PRIMARY KEY, payload TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, restaurant TEXT, role TEXT NOT NULL, hash TEXT NOT NULL, must_change INTEGER NOT NULL, temp_expires INTEGER, delivery TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0);
@@ -157,7 +159,7 @@ async function createApp(options = {}) {
   function records(kind, where, key) { return db.prepare(`SELECT payload FROM records WHERE kind=? AND ${where}=?${where === 'guest' ? ' AND customer IS NULL' : ''} ORDER BY rowid DESC LIMIT 100`).all(kind, key).map(x => JSON.parse(x.payload)); }
   const server = (options.createServer || http.createServer)(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'same-origin'); res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://images.unsplash.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' blob: https://images.unsplash.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     try {
       if (req.headers.host !== new URL(origin).host) fail(403, 'Недопустимый адрес сервера');
       const url = new URL(req.url, origin), p = url.pathname;
@@ -176,6 +178,10 @@ async function createApp(options = {}) {
         res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Локальная почта Dayin</title><link rel="stylesheet" href="/style.css"><main style="max-width:850px;margin:auto;padding:30px"><a href="/">← Dayin</a><h1>Локальная почта</h1><p>Письма для проверки на этом компьютере. На настоящую почту они не отправлены.</p>${messages.map(m => `<article class="panel" style="margin:20px 0"><strong>${escape(m.recipient)}</strong><h2>${escape(m.subject)}</h2><p style="white-space:pre-wrap;color:#252b26">${escape(m.body).replace(escape(origin + '/account'), `<a class="quiet" href="/account">${escape(origin + '/account')}</a>`).replace(escape(origin + '/admin'), `<a class="quiet" href="/admin">${escape(origin + '/admin')}</a>`)}</p></article>`).join('')}</main></html>`); return;
       }
       purge();
+      const media=p.match(/^\/media\/([a-zA-Z0-9_-]+)\/([a-f0-9-]+\.(?:jpg|png))$/);
+      if(media&&['GET','HEAD'].includes(req.method)){const image=db.prepare('SELECT type,data FROM dish_photos WHERE restaurant=? AND id=?').get(media[1],media[2]);if(!image)fail(404,'Фото не найдено');res.writeHead(200,{'Content-Type':image.type,'Cache-Control':'public, max-age=86400'});res.end(req.method==='HEAD'?'':Buffer.from(image.data));return}
+      const upload=p.match(/^\/api\/restaurants\/([^/]+)\/photos$/);
+      if(upload&&req.method==='POST'){const u=authenticated(req,'owner');owns(u,upload[1]);getRestaurant(upload[1]);limit('photo:'+u.id,30);const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>MAX_PHOTO)fail(413,'Фото слишком большое');chunks.push(chunk)}const bytes=Buffer.concat(chunks),type=req.headers['content-type'],ext=validatePhoto(bytes,type),id=crypto.randomUUID()+'.'+ext;db.prepare('INSERT INTO dish_photos VALUES(?,?,?,?)').run(id,upload[1],type,bytes);return json(res,201,{url:'/media/'+upload[1]+'/'+id})}
       if (p === '/api/catalog' && req.method === 'GET') {
         const u = url.searchParams.get('manage') === '1' ? authenticated(req) : null;
         const result=catalogPage(db,url.searchParams,u);
@@ -275,9 +281,11 @@ async function createApp(options = {}) {
       if (menuMatch && req.method === 'POST') {
         const u = authenticated(req); owns(u, menuMatch[1]); getRestaurant(menuMatch[1]); const f = await body(req), list = getMenu(menuMatch[1]);
         const name = text(f.name, 'Название блюда', 100), price = Number(f.price); if (!Number.isInteger(price) || price < 1 || price > 1000000) fail(400, 'Проверьте цену');
+        if(!f.id&&!f.img)fail(400,'Загрузите фото блюда');
+        if(f.img!==undefined&&(typeof f.img!=='string'||!f.img.startsWith('/media/'+menuMatch[1]+'/')||!/^\/media\/[a-zA-Z0-9_-]+\/[a-f0-9-]+\.(jpg|png)$/.test(f.img)))fail(400,'Загрузите фото блюда');
         if (f.category !== undefined && !DISH_CATEGORIES.includes(f.category)) fail(400, 'Выберите категорию блюда');
-        if (f.id) { const d = list.find(d => d.id === f.id); if (!d) fail(404, 'Блюдо не найдено'); d.name = name; d.price = price; if(f.category!==undefined)d.category=f.category; }
-        else list.push({ id: crypto.randomUUID(), name, price, category:f.category||'Другое', desc: text(f.desc, 'Описание', 300), img: 'photo-1547592180-85f173990554' });
+        if (f.id) { const d = list.find(d => d.id === f.id); if (!d) fail(404, 'Блюдо не найдено'); d.name = name; d.price = price; if(f.img)d.img=f.img; if(f.category!==undefined)d.category=f.category; }
+        else list.push({ id: crypto.randomUUID(), name, price, category:f.category||'Другое', desc: text(f.desc, 'Описание', 300), img:f.img||null });
         putMenu(menuMatch[1], list); return json(res, 200, { menu: list });
       }
       const restaurantMatch = p.match(/^\/api\/restaurants\/([^/]+)$/);
@@ -357,9 +365,9 @@ async function createApp(options = {}) {
       if (!['GET', 'HEAD'].includes(req.method)) fail(405, 'Метод не поддерживается');
       if (/^\/menu\/[^/]+$/.test(p) && !available(getRestaurant(decodeURIComponent(p.slice(6))))) fail(404, 'Заведение временно недоступно');
       const asset = ['/', '/account', '/admin', '/register'].includes(p) || /^\/menu\/[^/]+$/.test(p) ? 'index.html' : p.slice(1);
-      if (!['InterVariable.woff2','Inter-LICENSE.txt','index.html','style.css','theme.css','app.js','i18n.js','auth.js','admin.js','customer.js'].includes(asset)) fail(404, 'Не найдено');
+      if (!['dish-placeholder.svg','InterVariable.woff2','Inter-LICENSE.txt','index.html','style.css','theme.css','app.js','i18n.js','auth.js','admin.js','customer.js'].includes(asset)) fail(404, 'Не найдено');
       const data = options.readAsset ? await options.readAsset(asset) : fs.readFileSync(path.join(__dirname, 'dist', asset));
-      res.writeHead(200, { 'Content-Type': asset.endsWith('.woff2') ? 'font/woff2' : asset.endsWith('.txt') ? 'text/plain; charset=utf-8' : asset.endsWith('.css') ? 'text/css; charset=utf-8' : asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? '' : data);
+      res.writeHead(200, { 'Content-Type': asset.endsWith('.svg') ? 'image/svg+xml' : asset.endsWith('.woff2') ? 'font/woff2' : asset.endsWith('.txt') ? 'text/plain; charset=utf-8' : asset.endsWith('.css') ? 'text/css; charset=utf-8' : asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? '' : data);
     } catch (e) { if (!res.headersSent) json(res, e.status || 500, { error: e.status ? e.message : 'Не удалось выполнить запрос' }); else res.end(); }
   });
   const cleanupTimer = options.disableTimer ? null : setInterval(() => { try { purge(); } catch { console.error('Не удалось выполнить отложенное удаление заведений'); } }, 60000);

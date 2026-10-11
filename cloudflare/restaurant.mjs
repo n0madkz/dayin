@@ -1,8 +1,11 @@
+import photoModule from '../dish-photo.cjs';
 import { DurableObject } from 'cloudflare:workers';
 import recordsModule from '../order-record.cjs';
 const fail=(status,message)=>{throw Object.assign(new Error(message),{status})};
 export class RestaurantOrders extends DurableObject{
- constructor(ctx,env){super(ctx,env);ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,kind TEXT NOT NULL,guest TEXT NOT NULL,payload TEXT NOT NULL,revision INTEGER NOT NULL);CREATE INDEX IF NOT EXISTS orders_guest ON orders(guest,kind);CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY,kind TEXT NOT NULL,guest TEXT NOT NULL,payload TEXT NOT NULL,revision INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY,value TEXT NOT NULL);`)}
+ constructor(ctx,env){super(ctx,env);ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS photos(id TEXT PRIMARY KEY,type TEXT NOT NULL,data BLOB NOT NULL);CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,kind TEXT NOT NULL,guest TEXT NOT NULL,payload TEXT NOT NULL,revision INTEGER NOT NULL);CREATE INDEX IF NOT EXISTS orders_guest ON orders(guest,kind);CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY,kind TEXT NOT NULL,guest TEXT NOT NULL,payload TEXT NOT NULL,revision INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY,value TEXT NOT NULL);`)}
+ async storePhoto(bytes,type){const ext=photoModule.validatePhoto(bytes,type),id=crypto.randomUUID()+'.'+ext;this.ctx.storage.sql.exec('INSERT INTO photos VALUES(?,?,?)',id,type,bytes);return id}
+ async readPhoto(id){const photo=this.ctx.storage.sql.exec('SELECT type,data FROM photos WHERE id=?',id).toArray()[0];return photo||null}
  async submit(...args){try{return {record:await this.create(...args)}}catch(error){return {error:error.message,status:error.status||500}}}
  async update(...args){try{return {record:await this.change(...args)}}catch(error){return {error:error.message,status:error.status||500}}}
  async create(venueId,fields,kind,guest,ip,origin){

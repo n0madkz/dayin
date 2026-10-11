@@ -14,6 +14,7 @@ test('public navigation has one restaurant and no cabinet shortcut; first login 
   vm.runInContext('startMenuSwipe({touches:[{clientX:50,clientY:100}]});endMenuSwipe({changedTouches:[{clientX:200,clientY:110}]})',context);assert.equal(vm.runInContext('selectedDishCategory',context),'Салаты');
   vm.runInContext('startMenuSwipe({touches:[{clientX:50,clientY:100}]});endMenuSwipe({changedTouches:[{clientX:65,clientY:250}]})',context);assert.equal(vm.runInContext('selectedDishCategory',context),'Салаты');
   assert.ok(vm.runInContext('editMenu()',context).includes('name="category"'));vm.runInContext('selectedDishCategory="Все блюда";db.menus.r1=[]',context);
+  vm.runInContext('newDish()',context);assert.ok(el('#modal').innerHTML.includes('name="photoFile"'));assert.ok(el('#modal').innerHTML.includes('accept="image/jpeg,image/png,image/webp" required'));assert.equal(vm.runInContext('photo("/media/r1/test.jpg")',context),'/media/r1/test.jpg');assert.equal(vm.runInContext('photo(null)',context),'/dish-placeholder.svg');
   vm.runInContext('registration()',context);assert.ok(el('#app').innerHTML.includes('ФИО владельца'));assert.ok(el('#app').innerHTML.includes('Электронная почта'));
   vm.runInContext("authUser={name:'Сәрсенов Айдос Нұрланұлы',mustChangePassword:true};changePassword()",context);assert.ok(el('#app').innerHTML.includes('Повторите новый пароль'));assert.ok(!el('#app').innerHTML.includes('Редактор меню'));
   vm.runInContext('authUser=null;renderAccount()',context);assert.ok(el('#app').innerHTML.includes('Логин — электронная почта'));

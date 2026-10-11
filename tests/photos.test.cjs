@@ -1,0 +1,14 @@
+﻿const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{createApp}=require('../server.cjs');
+test('dish photos require owner access, persist and are attached to the correct dish',async()=>{
+const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'dayin-photos-'));let app=await createApp({dataDir,port:0,localMail:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const port=app.server.address().port,origin='http://127.0.0.1:'+port;await app.close();app=await createApp({dataDir,port,origin,localMail:true});await new Promise(r=>app.server.listen(port,'127.0.0.1',r));let cookie='';
+async function request(p,data){const response=await fetch(origin+p,{method:data?'POST':'GET',headers:{Connection:'close',Cookie:cookie,Origin:origin,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});for(const c of response.headers.getSetCookie())if(c.startsWith('dayin_session='))cookie=c.split(';')[0];return response}
+const photo=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9ioAAAAASUVORK5CYII=','base64');
+async function upload(bytes=photo,type='image/png'){return fetch(origin+'/api/restaurants/r1/photos',{method:'POST',headers:{Connection:'close',Cookie:cookie,Origin:origin,'Content-Type':type},body:bytes})}
+try{assert.equal((await upload()).status,401);const password=app.db.prepare('SELECT body FROM mailbox WHERE recipient=?').get('aidos@dayin.test').body.match(/Временный пароль: (\S+)/)[1];await request('/api/auth/login',{email:'aidos@dayin.test',password});assert.equal((await upload()).status,403);await request('/api/auth/password',{password:'Photo-password-2026',confirmPassword:'Photo-password-2026'});
+assert.equal((await upload(Buffer.from('<svg/>'),'image/svg+xml')).status,400);const uploaded=await upload();assert.equal(uploaded.status,201);const {url}=await uploaded.json();assert.ok(url.startsWith('/media/r1/'));const response=await request(url);assert.equal(response.headers.get('Content-Type'),'image/png');assert.deepEqual(Buffer.from(await response.arrayBuffer()),photo);
+assert.equal((await request('/api/restaurants/r1/menu',{name:'Фото блюда',desc:'Описание',price:1200})).status,400);
+assert.equal((await request('/api/restaurants/r1/menu',{name:'Фото блюда',desc:'Описание',price:1200,img:url,category:'Салаты'})).status,200);let menu=(await(await request('/api/restaurants/r1/menu')).json()).menu;assert.equal(menu.at(-1).img,url);
+await app.close();app=await createApp({dataDir,port,origin,localMail:true});await new Promise(r=>app.server.listen(port,'127.0.0.1',r));assert.deepEqual(Buffer.from(await(await request(url)).arrayBuffer()),photo);
+}finally{await app.close();fs.rmSync(dataDir,{recursive:true,force:true})}
+});
+

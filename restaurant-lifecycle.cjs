@@ -8,6 +8,7 @@ function purgeDueRestaurants(db,now=Date.now()){
   db.prepare('DELETE FROM mailbox WHERE recipient IN (SELECT email FROM users WHERE restaurant=?)').run(id);
   db.prepare('DELETE FROM users WHERE restaurant=?').run(id);
   db.prepare('DELETE FROM records WHERE restaurant=?').run(id);
+  db.prepare('DELETE FROM dish_photos WHERE restaurant=?').run(id);
   db.prepare('DELETE FROM menus WHERE restaurant=?').run(id);
   db.prepare('DELETE FROM restaurants WHERE id=?').run(id);
  }});
