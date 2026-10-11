@@ -1,6 +1,7 @@
 const UI_LANGS=['kk','ru','en'];
 let uiLanguage=UI_LANGS.includes(localStorage.getItem('dayin-language'))?localStorage.getItem('dayin-language'):'kk';
 const UI_COPY={
+ 'Выбрать город':['Қаланы таңдау','Choose city'],'Выберите город':['Қаланы таңдаңыз','Choose your city'],'Ваш город':['Сіздің қалаңыз','Your city'],'Сейчас сервис доступен в Атырау.':['Қазір қызмет Атырауда қолжетімді.','Currently available in Atyrau.'],
  'Все блюда':['Барлық тағамдар','All dishes'],'Категория блюда':['Тағам санаты','Dish category'],'Категории блюд':['Тағам санаттары','Dish categories'],'Блюда категории':['Санат тағамдары','Category dishes'],'Выберите категорию блюда':['Тағам санатын таңдаңыз','Choose a dish category'],
  'Салаты':['Салаттар','Salads'],'Закуски':['Тіскебасарлар','Starters'],'Супы':['Сорпалар','Soups'],'Горячие блюда':['Ыстық тағамдар','Main dishes'],'Паста':['Паста','Pasta'],'Фастфуд':['Фастфуд','Fast food'],'Пицца':['Пицца','Pizza'],'Суши и роллы':['Суши мен роллдар','Sushi & rolls'],'Десерты':['Десерттер','Desserts'],'Напитки':['Сусындар','Drinks'],'Другое':['Басқа','Other'],
  'Бесплатная доставка при заказе свыше, ₸':['Тегін жеткізу үшін тапсырыс сомасы, ₸','Free delivery for orders over, ₸'],
