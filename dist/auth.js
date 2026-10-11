@@ -24,7 +24,7 @@ function scheduleCatalogRefresh(){clearTimeout(catalogTimer);catalogTimer=setTim
 async function loadMoreRestaurants(){if(catalogLoading||!catalogNextCursor)return;catalogLoading=true;try{await refreshCatalog(true);render()}catch(error){toast(error.message)}finally{catalogLoading=false}}
 function moreRestaurantsButton(){return catalogNextCursor?'<div class="load-more"><button class="secondary" onclick="loadMoreRestaurants()">Показать ещё</button></div>':''}
 async function fetchMenu(id){const result=await api('/api/restaurants/'+encodeURIComponent(id)+'/menu');db.menus[id]=result.menu;const index=db.restaurants.findIndex(r=>r.id===id);if(index<0)db.restaurants.push(result.restaurant);else db.restaurants[index]=result.restaurant;return result.restaurant}
-openRestaurant=async function(id){try{await fetchMenu(id);current=id;page='detail';render();window.scrollTo({top:0,behavior:'smooth'})}catch(error){toast(error.message)}};
+openRestaurant=async function(id){try{await fetchMenu(id);current=id;selectedDishCategory='Все блюда';page='detail';render();window.scrollTo({top:0,behavior:'smooth'})}catch(error){toast(error.message)}};
 
 async function refreshAccount(){accountData=await api('/api/account');authUser=accountData.user;db.orders=accountData.orders;db.bookings=accountData.bookings}
 async function refreshHistory(){const result=await api('/api/my');db.orders=result.orders;db.bookings=result.bookings}
@@ -36,8 +36,8 @@ async function submitOrder(e){e.preventDefault();if(orderSubmitting)return;if(!c
 async function submitBooking(e,id){e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{await api('/api/bookings','POST',{...Object.fromEntries(new FormData(e.target)),restaurant:id});$('#modal').close();await nav('bookings');toast('Заявка на столик отправлена')}catch(error){toast(error.message)}finally{button.disabled=false}};
 async function cancel(kind,id){try{await api(`/api/${kind}/${id}`,'PATCH',{cancel:true});await refreshHistory();render();toast('Заявка отменена')}catch(e){toast(e.message)}};
 async function updateStatus(kind,id,status){try{await api(`/api/${kind}/${id}`,'PATCH',{status});await refreshAccount();render();toast('Статус обновлён')}catch(e){toast(e.message);await refreshAccount();render()}};
-async function saveDish(e,id){e.preventDefault();try{await api(`/api/restaurants/${current}/menu`,'POST',{...Object.fromEntries(new FormData(e.target)),id});await refreshCatalog();render();toast('Блюдо обновлено')}catch(error){toast(error.message)}};
-async function submitDish(e){e.preventDefault();try{await api(`/api/restaurants/${current}/menu`,'POST',Object.fromEntries(new FormData(e.target)));await refreshCatalog();$('#modal').close();render();toast('Блюдо добавлено')}catch(error){toast(error.message)}};
+async function saveDish(e,id){e.preventDefault();try{await api(`/api/restaurants/${current}/menu`,'POST',{...Object.fromEntries(new FormData(e.target)),id});await refreshCatalog();await fetchMenu(current);render();toast('Блюдо обновлено')}catch(error){toast(error.message)}};
+async function submitDish(e){e.preventDefault();try{await api(`/api/restaurants/${current}/menu`,'POST',Object.fromEntries(new FormData(e.target)));await refreshCatalog();await fetchMenu(current);$('#modal').close();render();toast('Блюдо добавлено')}catch(error){toast(error.message)}};
 const editRestaurantModal=newRestaurant;
 const bookingModal=book;
 book=async function(id){try{await fetchMenu(id);bookingModal(id)}catch(error){toast(error.message)}};

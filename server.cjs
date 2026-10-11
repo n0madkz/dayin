@@ -1,3 +1,4 @@
+const {DISH_CATEGORIES,dishCategory}=require('./dish-categories.cjs');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -46,7 +47,7 @@ async function createApp(options = {}) {
   db.exec("CREATE INDEX IF NOT EXISTS records_kind_restaurant ON records(kind,restaurant); CREATE INDEX IF NOT EXISTS restaurants_status ON restaurants(json_extract(payload,'$.status')); CREATE INDEX IF NOT EXISTS restaurants_delete_at ON restaurants(json_extract(payload,'$.deleteAt'))");
   db.prepare("DELETE FROM sessions WHERE user IN (SELECT id FROM users WHERE role='customer')").run();
   const allRestaurants = () => db.prepare('SELECT payload FROM restaurants ORDER BY rowid').all().map(x => JSON.parse(x.payload));
-  const getMenu = id => JSON.parse(db.prepare('SELECT payload FROM menus WHERE restaurant=?').get(id)?.payload || '[]');
+  const getMenu = id => JSON.parse(db.prepare('SELECT payload FROM menus WHERE restaurant=?').get(id)?.payload || '[]').map(d=>({...d,category:dishCategory(d)}));
   const getRestaurant = id => { const row = db.prepare('SELECT payload FROM restaurants WHERE id=?').get(id); if (!row) fail(404, 'Заведение не найдено'); return JSON.parse(row.payload); };
   const putRestaurant = r => { r.maxGuests ??= 8; r.halal ??= null; r.cuisines ??= [r.type || 'Европейская']; r.status ??= 'active'; r.deleteAt ??= null; r.city ??= 'Атырау'; return db.prepare('INSERT OR REPLACE INTO restaurants VALUES (?,?)').run(r.id, JSON.stringify(r)); };
   const available = r => r.status === 'active' && !r.deleteAt;
@@ -273,8 +274,9 @@ async function createApp(options = {}) {
       if (menuMatch && req.method === 'POST') {
         const u = authenticated(req); owns(u, menuMatch[1]); getRestaurant(menuMatch[1]); const f = await body(req), list = getMenu(menuMatch[1]);
         const name = text(f.name, 'Название блюда', 100), price = Number(f.price); if (!Number.isInteger(price) || price < 1 || price > 1000000) fail(400, 'Проверьте цену');
-        if (f.id) { const d = list.find(d => d.id === f.id); if (!d) fail(404, 'Блюдо не найдено'); d.name = name; d.price = price; }
-        else list.push({ id: crypto.randomUUID(), name, price, desc: text(f.desc, 'Описание', 300), img: 'photo-1547592180-85f173990554' });
+        if (f.category !== undefined && !DISH_CATEGORIES.includes(f.category)) fail(400, 'Выберите категорию блюда');
+        if (f.id) { const d = list.find(d => d.id === f.id); if (!d) fail(404, 'Блюдо не найдено'); d.name = name; d.price = price; if(f.category!==undefined)d.category=f.category; }
+        else list.push({ id: crypto.randomUUID(), name, price, category:f.category||'Другое', desc: text(f.desc, 'Описание', 300), img: 'photo-1547592180-85f173990554' });
         putMenu(menuMatch[1], list); return json(res, 200, { menu: list });
       }
       const restaurantMatch = p.match(/^\/api\/restaurants\/([^/]+)$/);

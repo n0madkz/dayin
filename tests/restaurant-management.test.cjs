@@ -14,6 +14,11 @@ test('multiple cuisines, admin-only statuses, password-confirmed deferred deleti
   await owner('/api/auth/login','POST',{email:'aidos@dayin.test',password:temp('aidos@dayin.test')});await owner('/api/auth/password','POST',{password:ownerPassword,confirmPassword:ownerPassword});
   const settings={name:'Зелёный двор',desc:'Кухня',address:'Алматы',avg:5000,maxGuests:8,cuisines:['Казахская','Европейская']};
   const edited=await owner('/api/restaurants/r1','PATCH',settings);assert.equal(edited.status,200);assert.deepEqual(edited.body.restaurant.cuisines,settings.cuisines);
+  assert.equal((await guest('/api/restaurants/r1/menu')).body.menu[0].category,'Салаты');
+  assert.equal((await owner('/api/restaurants/r1/menu','POST',{id:'d1',name:'Салат с burrata',price:3900,category:'Закуски'})).status,200);
+  assert.equal((await guest('/api/restaurants/r1/menu')).body.menu[0].category,'Закуски');
+  assert.equal((await owner('/api/restaurants/r1/menu','POST',{id:'d1',name:'Салат с burrata',price:3900,category:'invalid'})).status,400);
+  assert.equal((await guest('/api/restaurants/r1/menu','POST',{id:'d1',name:'Салат',price:3900,category:'Салаты'})).status,401);
   const threshold=await owner('/api/restaurants/r1','PATCH',{...settings,freeDeliveryAbove:10000});assert.equal(threshold.status,200);assert.equal(threshold.body.restaurant.freeDeliveryAbove,10000);
   assert.equal((await guest('/api/catalog')).body.restaurants[0].freeDeliveryAbove,10000);
   for(const freeDeliveryAbove of [-1,1.5,1000001,'invalid'])assert.equal((await owner('/api/restaurants/r1','PATCH',{...settings,freeDeliveryAbove})).status,400);

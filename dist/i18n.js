@@ -1,6 +1,8 @@
 const UI_LANGS=['kk','ru','en'];
 let uiLanguage=UI_LANGS.includes(localStorage.getItem('dayin-language'))?localStorage.getItem('dayin-language'):'kk';
 const UI_COPY={
+ 'Все блюда':['Барлық тағамдар','All dishes'],'Категория блюда':['Тағам санаты','Dish category'],'Категории блюд':['Тағам санаттары','Dish categories'],'Блюда категории':['Санат тағамдары','Category dishes'],'Выберите категорию блюда':['Тағам санатын таңдаңыз','Choose a dish category'],
+ 'Салаты':['Салаттар','Salads'],'Закуски':['Тіскебасарлар','Starters'],'Супы':['Сорпалар','Soups'],'Горячие блюда':['Ыстық тағамдар','Main dishes'],'Паста':['Паста','Pasta'],'Фастфуд':['Фастфуд','Fast food'],'Пицца':['Пицца','Pizza'],'Суши и роллы':['Суши мен роллдар','Sushi & rolls'],'Десерты':['Десерттер','Desserts'],'Напитки':['Сусындар','Drinks'],'Другое':['Басқа','Other'],
  'Бесплатная доставка при заказе свыше, ₸':['Тегін жеткізу үшін тапсырыс сомасы, ₸','Free delivery for orders over, ₸'],
  'Оставьте пустым, если бесплатная доставка не предусмотрена.':['Тегін жеткізу қарастырылмаса, бос қалдырыңыз.','Leave blank if free delivery is not offered.'],
  'Например, 10000':['Мысалы, 10000','For example, 10000'],

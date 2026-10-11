@@ -1,11 +1,18 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 test('public navigation has one restaurant and no cabinet shortcut; first login is a separate screen',async()=>{
-  const elements={};const el=s=>elements[s]||(elements[s]={innerHTML:'',textContent:'',style:{},addEventListener(){},focus(){},setSelectionRange(){},showModal(){}});
+  const elements={};const el=s=>elements[s]||(elements[s]={innerHTML:'',textContent:'',style:{},querySelector(){return null},addEventListener(){},focus(){},setSelectionRange(){},showModal(){}});
   const r={id:'r1',name:'Зелёный двор',type:'Европейская',desc:'Кухня',address:'Алматы',rating:'—',time:'25–35',avg:6500,img:'photo-1414235077428-338989a2e8c0',tag:'Зарегистрированное заведение'};
   const data={'/api/auth/session':{user:null,localMail:true},'/api/catalog':{restaurants:[r],menus:{r1:[]}},'/api/my':{orders:[],bookings:[]},'/api/restaurants/r1/menu':{restaurant:r,menu:[]}};
   const storage={};const context=vm.createContext({document:{querySelector:el},localStorage:{getItem:key=>storage[key]||null,setItem(key,value){storage[key]=value}},location:{pathname:'/',origin:'http://127.0.0.1:4173',hostname:'127.0.0.1'},URLSearchParams,window:{scrollTo(){}},fetch:async url=>({ok:true,json:async()=>data[url.split('?')[0]]}),console,setTimeout:()=>1,clearTimeout(){},FormData:class{constructor(f){return new Map(Object.entries(f))}}});
   vm.runInContext(fs.readFileSync('dist/app.js','utf8'),context);vm.runInContext(fs.readFileSync('dist/auth.js','utf8'),context);vm.runInContext(fs.readFileSync('dist/admin.js','utf8'),context);vm.runInContext(fs.readFileSync('dist/customer.js','utf8'),context);await vm.runInContext('appReady',context);
   const html=el('#app').innerHTML;assert.equal((html.match(/class="card"/g)||[]).length,1);assert.ok(!html.includes('Кабинет ресторана'));assert.ok(!html.includes('Кабинеты'));assert.ok(!html.includes('Администратор'));assert.ok(!html.includes('/register'));assert.ok(!html.includes('class="avatar"'));assert.ok(!html.includes('>Г</')); 
+  vm.runInContext('db.menus.r1=[{id:"salad",name:"Салат",category:"Салаты",price:1000},{id:"burger",name:"Бургер",category:"Фастфуд",price:2000}];current="r1";page="detail"',context);
+  assert.ok(vm.runInContext('detail()',context).includes('role="tablist"'));
+  vm.runInContext('selectDishCategory(1)',context);assert.equal(vm.runInContext('visibleDishes(current)[0].id',context),'salad');assert.equal(vm.runInContext('visibleDishes(current).length',context),1);
+  vm.runInContext('startMenuSwipe({touches:[{clientX:200,clientY:100}]});endMenuSwipe({changedTouches:[{clientX:50,clientY:110}]})',context);assert.equal(vm.runInContext('visibleDishes(current)[0].id',context),'burger');
+  vm.runInContext('startMenuSwipe({touches:[{clientX:50,clientY:100}]});endMenuSwipe({changedTouches:[{clientX:200,clientY:110}]})',context);assert.equal(vm.runInContext('selectedDishCategory',context),'Салаты');
+  vm.runInContext('startMenuSwipe({touches:[{clientX:50,clientY:100}]});endMenuSwipe({changedTouches:[{clientX:65,clientY:250}]})',context);assert.equal(vm.runInContext('selectedDishCategory',context),'Салаты');
+  assert.ok(vm.runInContext('editMenu()',context).includes('name="category"'));vm.runInContext('selectedDishCategory="Все блюда";db.menus.r1=[]',context);
   vm.runInContext('registration()',context);assert.ok(el('#app').innerHTML.includes('ФИО владельца'));assert.ok(el('#app').innerHTML.includes('Электронная почта'));
   vm.runInContext("authUser={name:'Сәрсенов Айдос Нұрланұлы',mustChangePassword:true};changePassword()",context);assert.ok(el('#app').innerHTML.includes('Повторите новый пароль'));assert.ok(!el('#app').innerHTML.includes('Редактор меню'));
   vm.runInContext('authUser=null;renderAccount()',context);assert.ok(el('#app').innerHTML.includes('Логин — электронная почта'));
