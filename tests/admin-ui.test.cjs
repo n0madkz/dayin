@@ -9,13 +9,15 @@ test('admin uses an independent workspace with working operational sections',asy
  // openWorkspace is started by renderAccount; wait for its asynchronous catalog/account refresh.
  await new Promise(resolve=>setImmediate(resolve));
  let html=el('#app').innerHTML;assert.ok(html.includes('class="admin-shell"'));assert.ok(html.includes('Всё под контролем.'));assert.ok(html.includes('Сертификатов халал на проверке: 1.'));assert.ok(!html.includes('Мои заказы'));assert.ok(!html.includes('Избранное'));assert.ok(!html.includes('ВАШЕ ЗАВЕДЕНИЕ'));
- for(const section of ['restaurants','orders','bookings','certificates','overview']){
+ assert.ok(!html.includes('Бронирования'));assert.ok(!html.includes('Заказы'));assert.ok(!html.includes('Редактор меню'));
+ for(const section of ['restaurants','certificates','overview']){
   vm.runInContext(`selectAdminSection('${section}')`,context);html=el('#app').innerHTML;
   assert.ok(html.includes('aria-current="page"'));assert.ok(html.includes('class="admin-shell"'));
   for(const match of html.matchAll(/\bon(?:click|submit|change)="([^"]*)"/g))assert.doesNotThrow(()=>new vm.Script(match[1]));
  }
  vm.runInContext("selectAdminSection('certificates')",context);assert.ok(el('#app').innerHTML.includes('CERT-1'));assert.ok(el('#app').innerHTML.includes('Подтвердить'));
  vm.runInContext("selectAdminSection('restaurants');newRestaurant()",context);assert.ok(el('#modal').innerHTML.includes('ФИО владельца'));
+ vm.runInContext("newRestaurant('r1')",context);assert.ok(el('#modal').innerHTML.includes('Профиль партнёра'));assert.ok(!el('#modal').innerHTML.includes('maxGuests'));assert.ok(!el('#modal').innerHTML.includes('freeDeliveryAbove'));
   assert.ok(el('#app').innerHTML.includes('Деактивировать'));assert.ok(el('#app').innerHTML.includes('Удалить через 7 дней'));
   vm.runInContext("confirmRestaurantDeletion('r1')",context);assert.ok(el('#modal').innerHTML.includes('Текущий пароль администратора'));
   vm.runInContext("db.restaurants[0].status='inactive';db.restaurants[0].deleteAt=Date.now()+604800000;selectAdminSection('restaurants')",context);

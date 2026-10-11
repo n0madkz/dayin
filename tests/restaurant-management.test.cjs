@@ -38,6 +38,7 @@ test('multiple cuisines, admin-only statuses, password-confirmed deferred deleti
   assert.equal((await guest('/api/orders','POST',order)).status,409);
   assert.equal((await guest('/api/bookings','POST',{name:'Гость',phone:'+77001234567',restaurant:'r1',date:'2099-12-12',time:'19:00',guests:2})).status,409);
   await admin(lifecycle,'POST',{action:'status',status:'active'});assert.equal((await guest('/api/orders','POST',order)).status,201);
+  const adminAccount=(await admin('/api/account')).body;assert.deepEqual(adminAccount.orders,[]);assert.deepEqual(adminAccount.bookings,[]);assert.equal(adminAccount.stats.orders,undefined);assert.equal((await owner('/api/account')).body.orders.length,1);
   assert.equal((await admin(lifecycle,'POST',{action:'schedule-delete',password:'wrong'})).status,403);
   assert.equal((await guest('/api/catalog')).body.restaurants[0].deleteAt,null);
   const scheduled=await admin(lifecycle,'POST',{action:'schedule-delete',password});assert.equal(scheduled.status,200);assert.equal(scheduled.body.restaurant.deleteAt,now+RETENTION_MS);assert.equal(scheduled.body.restaurant.status,'inactive');
