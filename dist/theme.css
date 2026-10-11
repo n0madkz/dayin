@@ -42,3 +42,19 @@ body,button,input,select,textarea,h1,h2,h3,.hero h1{font-family:var(--app-font)}
 @media(max-width:360px){.topbar{padding:10px 12px}.mobile-brand{font-size:22px}.language-switch{grid-template-columns:repeat(3,34px)}.language-thumb{width:34px}.city-control{font-size:12px}.hero h1{font-size:34px}}
 @media(prefers-reduced-motion:reduce){.language-thumb,.language-switch button{transition:none}}
 .city-inline{white-space:nowrap;flex-shrink:0}.hero-copy button:focus-visible,.city-control:focus-visible{outline:3px solid var(--orange);outline-offset:4px}
+
+/* Explicit foregrounds for every filled surface, including nested copy. */
+.notice,.notice p,.notice strong,.notice small,.notice .muted,.notice .auth-help,.notice h2,.notice h3,.notice a{color:var(--white)}
+.editorial,.editorial h2,.editorial p,.editorial .eyebrow{color:var(--navy)}
+.cuisine-chip.selected:hover{background:var(--navy);color:var(--white)}
+.primary:hover,.secondary:hover{background:var(--navy);color:var(--white)}
+.primary:hover .icon,.secondary:hover .icon{color:inherit}
+.admin-sidebar p,.admin-sidebar .muted,.admin-sidebar small,.admin-sidebar .eyebrow,.admin-sidebar-footer,.admin-sidebar-footer span{color:var(--white)}
+.admin-intro p,.admin-intro small,.admin-intro .muted,.admin-intro .eyebrow,.auth-story p,.auth-story small,.auth-story .muted{color:var(--white)}
+.form-error,.form-error p,.form-error strong,.form-error small{color:var(--white)}
+.admin-action-card .secondary,.admin-action-card .secondary .icon{color:var(--white)}
+.status,.status small,.status strong,.halal-badge,.halal-badge span{color:var(--white)}
+.status-inactive,.status-deletion{color:var(--navy)}.halal-badge:hover,.halal-badge:hover span{color:var(--navy)}
+input,textarea,select{color:var(--navy);background:var(--white)}input::placeholder,textarea::placeholder{color:var(--navy);opacity:.75}
+.form label,.qr-label{color:var(--navy)}button:disabled{opacity:1;color:var(--navy);background:var(--white);border:1px dashed var(--line);cursor:not-allowed}
+#toast,#toast p,#toast strong{background:var(--navy);color:var(--white)}
