@@ -1,0 +1,2 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),{translations}=require('../dish-translations.cjs');
+test('dish translations validate supported languages and preserve distinct copy',()=>{const rows={kk:{name:'Салат',desc:'Жаңа көкөністер'},ru:{name:'Салат',desc:'Свежие овощи'},en:{name:'Salad',desc:'Fresh vegetables'}};assert.deepEqual(translations(rows),rows);assert.throws(()=>translations({en:{name:'',desc:''}}));assert.throws(()=>translations({kk:{name:'x',desc:'x'.repeat(301)}}));assert.equal(translations(undefined),undefined)});

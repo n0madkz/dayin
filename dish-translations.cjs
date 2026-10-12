@@ -1,0 +1,3 @@
+const languages=['kk','ru','en'];
+function translations(value){if(value===undefined)return undefined;if(!value||typeof value!=='object'||Array.isArray(value))throw Object.assign(Error('Проверьте переводы блюда'),{status:400});const result={};for(const language of languages){const row=value[language];if(row===undefined)continue;if(!row||typeof row.name!=='string'||!row.name.trim()||row.name.trim().length>100||typeof row.desc!=='string'||row.desc.length>300)throw Object.assign(Error('Проверьте переводы блюда'),{status:400});result[language]={name:row.name.trim(),desc:row.desc.trim()}}return result}
+module.exports={translations};

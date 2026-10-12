@@ -1,3 +1,4 @@
+const {translations:validateDishTranslations}=require('./dish-translations.cjs');
 const {validatePhoto,MAX_PHOTO}=require('./dish-photo.cjs');
 const {DISH_CATEGORIES,dishCategory}=require('./dish-categories.cjs');
 const http = require('node:http');
@@ -280,12 +281,12 @@ async function createApp(options = {}) {
       const menuMatch = p.match(/^\/api\/restaurants\/([^/]+)\/menu$/);
       if (menuMatch && req.method === 'POST') {
         const u = authenticated(req); owns(u, menuMatch[1]); getRestaurant(menuMatch[1]); const f = await body(req), list = getMenu(menuMatch[1]);
-        const name = text(f.name, 'Название блюда', 100), price = Number(f.price); if (!Number.isInteger(price) || price < 1 || price > 1000000) fail(400, 'Проверьте цену');
+        const translated=validateDishTranslations(f.translations);const name = text(f.name, 'Название блюда', 100), price = Number(f.price); if (!Number.isInteger(price) || price < 1 || price > 1000000) fail(400, 'Проверьте цену');
         if(!f.id&&!f.img)fail(400,'Загрузите фото блюда');
         if(f.img!==undefined&&(typeof f.img!=='string'||!f.img.startsWith('/media/'+menuMatch[1]+'/')||!/^\/media\/[a-zA-Z0-9_-]+\/[a-f0-9-]+\.(jpg|png)$/.test(f.img)))fail(400,'Загрузите фото блюда');
         if (f.category !== undefined && !DISH_CATEGORIES.includes(f.category)) fail(400, 'Выберите категорию блюда');
-        if (f.id) { const d = list.find(d => d.id === f.id); if (!d) fail(404, 'Блюдо не найдено'); d.name = name; d.price = price; if(f.img)d.img=f.img; if(f.category!==undefined)d.category=f.category; }
-        else list.push({ id: crypto.randomUUID(), name, price, category:f.category||'Другое', desc: text(f.desc, 'Описание', 300), img:f.img||null });
+        if (f.id) { const d = list.find(d => d.id === f.id); if (!d) fail(404, 'Блюдо не найдено'); d.name = name; d.price = price; if(translated)d.translations=translated; if(f.desc!==undefined)d.desc=text(f.desc,'Описание',300); if(f.img)d.img=f.img; if(f.category!==undefined)d.category=f.category; }
+        else list.push({ id: crypto.randomUUID(), name, price, translations:translated||{}, category:f.category||'Другое', desc: text(f.desc, 'Описание', 300), img:f.img||null });
         putMenu(menuMatch[1], list); return json(res, 200, { menu: list });
       }
       const restaurantMatch = p.match(/^\/api\/restaurants\/([^/]+)$/);
